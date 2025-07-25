@@ -37,6 +37,7 @@ class _BleScannerState extends State<BleScanner> {
     debugPrint("🔍 Startar BLE-scan...");
     FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
 
+    /*
     FlutterBluePlus.scanResults.listen((results) {
       debugPrint('scanResults.listen anropad. Hittade ${results.length} enheter');
 
@@ -49,26 +50,37 @@ class _BleScannerState extends State<BleScanner> {
         }
       }
   });
-
-
-
-  /*
-  FlutterBluePlus.scanResults.listen((results) {
-    debugPrint("📡 Hittade ${results.length} enheter");
-    setState(() {
-      devices.clear();
-      devices.addAll(results);
-    });
-  });
   */
+
+  FlutterBluePlus.scanResults.listen((results) {
+    if (results.isEmpty) return;
+
+    // Hitta enheten med högst RSSI = närmast
+    ScanResult closest = results.reduce((a, b) => a.rssi > b.rssi ? a : b);
+
+    final rssi = closest.rssi.toDouble();
+    final distance = calculateDistance(rssi);
+    final name = closest.device.name.isNotEmpty ? closest.device.name : "(okänd)";
+    final mac = closest.device.id.id;
+
+    debugPrint("🎯 Närmaste enhet: $name ($mac)  RSSI=$rssi  Avstånd ≈ ${distance.toStringAsFixed(2)} m");
+  });
+
+
+
 }
 
 
-
+  /*
   double calculateDistance(int rssi, int txPower, double n) {
     // Log-distance path loss model
     return pow(10, (txPower - rssi) / (10 * n)).toDouble();
   }
+  */
+  double calculateDistance(double rssi, {double txPower = -59, double n = 2.0}) {
+    return pow(10, (txPower - rssi) / (10 * n)).toDouble();
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +96,7 @@ class _BleScannerState extends State<BleScanner> {
     final nearest = sorted.first;
 
     final distance =
-        calculateDistance(nearest.rssi, -59, 2.0).toStringAsFixed(2);
+        calculateDistance(nearest.rssi.toDouble()).toStringAsFixed(2);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Närmaste BLE-enhet')),
