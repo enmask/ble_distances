@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MaterialApp(home: BleScanner()));
@@ -14,25 +15,55 @@ class BleScanner extends StatefulWidget {
 }
 
 class _BleScannerState extends State<BleScanner> {
-  final List<ScanResult> devices = [];
+  List<ScanResult> devices = [];
 
   @override
   void initState() {
     super.initState();
-    startScan();
+    requestPermissions().then((_) {
+      startScan();  // ✅ Kör både scan + lyssning
+    });
+  }
+
+  Future<void> requestPermissions() async {
+    await [
+      Permission.location,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+    ].request();
   }
 
   void startScan() {
     debugPrint("🔍 Startar BLE-scan...");
     FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
+
     FlutterBluePlus.scanResults.listen((results) {
-      debugPrint("📡 Hittade ${results.length} enheter");
-      setState(() {
-        devices.clear();
-        devices.addAll(results);
-      });
+      debugPrint('scanResults.listen anropad. Hittade ${results.length} enheter');
+
+      for (var result in results) {
+        final name = result.device.name.isEmpty ? '(okänd)' : result.device.name;
+        final id = result.device.id.id;
+        final rssi = result.rssi;
+        if (results.length > 500 && rssi > -50) {
+          debugPrint('🔁 Avläst (nära enhet): $name ($id) RSSI=$rssi');
+        }
+      }
+  });
+
+
+
+  /*
+  FlutterBluePlus.scanResults.listen((results) {
+    debugPrint("📡 Hittade ${results.length} enheter");
+    setState(() {
+      devices.clear();
+      devices.addAll(results);
     });
-  }
+  });
+  */
+}
+
+
 
   double calculateDistance(int rssi, int txPower, double n) {
     // Log-distance path loss model
@@ -41,46 +72,50 @@ class _BleScannerState extends State<BleScanner> {
 
   @override
   Widget build(BuildContext context) {
-    // Sortera efter starkast RSSI
-    List<ScanResult> sortedDevices = [...devices];
-    sortedDevices.sort((a, b) => b.rssi.compareTo(a.rssi));
+    if (devices.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Närmaste BLE-enhet')),
+        body: Center(child: Text("🔍 Inga enheter hittades ännu")),
+      );
+    }
 
-    final nearest = sortedDevices.isNotEmpty ? sortedDevices.first : null;
+    final sorted = [...devices];
+    sorted.sort((a, b) => b.rssi.compareTo(a.rssi));
+    final nearest = sorted.first;
+
+    final distance =
+        calculateDistance(nearest.rssi, -59, 2.0).toStringAsFixed(2);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Närmaste BLE-enhet')),
-      body: nearest == null
-          ? const Center(child: Text("🔍 Inga enheter hittades ännu"))
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Card(
-                elevation: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        nearest.device.name.isEmpty
-                            ? '(okänd enhet)'
-                            : nearest.device.name,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text('MAC-adress: ${nearest.device.id.id}'),
-                      Text('RSSI: ${nearest.rssi} dBm'),
-                      Text(
-                        'Uppskattat avstånd: ${calculateDistance(nearest.rssi, -59, 2.0).toStringAsFixed(2)} m',
-                      ),
-                    ],
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Card(
+          elevation: 4,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nearest.device.name.isEmpty
+                      ? '(okänd enhet)'
+                      : nearest.device.name,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
+                const SizedBox(height: 10),
+                Text('MAC-adress: ${nearest.device.id.id}'),
+                Text('RSSI: ${nearest.rssi} dBm'),
+                Text('Uppskattat avstånd: $distance m'),
+              ],
             ),
+          ),
+        ),
+      ),
     );
   }
 }
